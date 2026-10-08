@@ -1,0 +1,72 @@
+USE coworking;
+
+-- cree  la vista VW_EstadosEspacio
+DROP VIEW IF EXISTS VW_EstadoEspacios;
+
+CREATE VIEW VW_EstadoEspacios AS
+SELECT 
+    e.nombre AS Espacio,
+    e.tipo AS TipoEspacio,
+    e.estado AS EstadoActual,
+   
+    (
+        SELECT CONCAT(r.fecha_reserva, ' ', r.hora_inicio)
+        FROM reserva r
+        WHERE r.espacioID = e.espacioID
+          AND r.estado IN ('Confirmada', 'Pendiente')
+          AND r.fecha_reserva >= CURDATE()
+        ORDER BY r.fecha_reserva ASC, r.hora_inicio ASC
+        LIMIT 1
+    ) AS ProximaReserva
+FROM espacio e;
+
+-- Consulta para probar la vista:
+SELECT * FROM VW_EstadoEspacios;
+
+-- cree el procedimiento --
+DROP PROCEDURE IF EXISTS sp_GenerarReporteDiario;
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_GenerarReporteDiario(IN p_fecha DATE)
+BEGIN
+    SELECT 
+        -- Total de reservas en el día (excluyendo canceladas)
+        (
+            SELECT COUNT(*) 
+            FROM reserva 
+            WHERE fecha_reserva = p_fecha
+              AND estado != 'Cancelada'
+        ) AS TotalReservasHoy,
+
+        -- Usuarios  que ingresaron y fueron autorizados en la fecha
+        (
+            SELECT COUNT(DISTINCT usuarioID) 
+            FROM asistencia 
+            WHERE fecha = p_fecha 
+              AND resultado_validacion = 'Autorizado'
+        ) AS UsuariosActivosDia,
+
+        -- Suma total de los pagos recibidos en la fecha
+        (
+            SELECT COALESCE(SUM(monto), 0.00) 
+            FROM pago 
+            WHERE DATE(fecha_pago) = p_fecha 
+              AND estado = 'Pagado'
+        ) AS IngresosDelDia;
+END $$
+
+DELIMITER ;
+
+-- Prueba del procedimiento con la fecha'2026-09-29':
+CALL sp_GenerarReporteDiario('2026-09-29');
+
+
+-- cree la consulta --
+-- Prueba para la fecha '2026-09-30':
+SELECT 
+    CONCAT('Ahora mismo hay ', COUNT(*), ' personas en el coworking') AS EstadoActualCoworking
+FROM asistencia
+WHERE fecha = '2026-09-30'
+  AND resultado_validacion = 'Autorizado'
+  AND hora_salida IS NULL;
